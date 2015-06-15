@@ -106,7 +106,7 @@ namespace CorFlags
 			// The user defined version of the assembly
 			info.assemblyVersion = assembly.Assembly.Name.Version.ToString ();
 
-			//Version of the mscorlib.dll that was assembly was compiled with.
+			//Version of the mscorlib.dll that was assembly was compiled with and now should run against
 			info.version = assembly.RuntimeVersion;
 
 			info.clr_header = assembly.Runtime;
@@ -118,7 +118,6 @@ namespace CorFlags
 			info.ilonly = (assembly.Attributes & ModuleAttributes.ILOnly) == ModuleAttributes.ILOnly;
 
 			info.x32bitreq = (assembly.Attributes & ModuleAttributes.Required32Bit) == ModuleAttributes.Required32Bit;
-			//Console.WriteLine (assembly.Attributes);
 
 			info.x32bitpref = (assembly.Attributes & ModuleAttributes.Preferred32Bit) == ModuleAttributes.Preferred32Bit;
 
@@ -128,15 +127,18 @@ namespace CorFlags
 		}
 
 		public ModuleDefinition OpenAssembly (CorFlagsSettings setting,  string aFileName, Report report, out string fullAssemblyPath) {
-			var dataPath = Path.GetDirectoryName (GetType ().Assembly.Location);
+			var dataPath = Path.GetDirectoryName (Environment.GetEnvironmentVariable ("PWD"));
 
 			fullAssemblyPath = Path.Combine (dataPath, aFileName);
-
-			if (!File.Exists (fullAssemblyPath)) {
+			var fullPath = Path.GetFullPath(aFileName);
+			if (!File.Exists (fullPath)) {
+				#if DEBUG
+				output.WriteLine (fullPath);
+				#endif
 				throw new FileNotFoundException();
 			}
 
-			var targetModule = ModuleDefinition.ReadModule (fullAssemblyPath);
+			var targetModule = ModuleDefinition.ReadModule (fullPath);
 			if (!IsMarked (targetModule)) {
 				// Console.WriteLine("isMarked?");
 			}
