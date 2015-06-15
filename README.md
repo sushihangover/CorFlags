@@ -3,11 +3,11 @@
 
 ### The CorFlags Conversion tool allows you to configure the CorFlags section of the header of a portable executable image.
 
-This is a cross-platform version of the [Microsoft CorFlags](https://msdn.microsoft.com/en-us/library/ms164699%28v=vs.110%29.aspx?f=255&MSPPError=-2147217396) tool that is included in the .Net Framework SDK installations.
+This is a **cross-platform** version of the [Microsoft CorFlags](https://msdn.microsoft.com/en-us/library/ms164699%28v=vs.110%29.aspx?f=255&MSPPError=-2147217396) tool that is included in the .Net Framework SDK installations.
 
 * [MSDN Documentation for CorFlag.exe](https://msdn.microsoft.com/en-us/library/ms164699%28v=vs.110%29.aspx?f=255&MSPPError=-2147217396)
 
-This xplat version strives to be argument option and output compatible (using /nologo) with the Microsoft version so 
+This xplat version strives to be argument option and output compatible (using /nologo) with the Microsoft version.
 
 *Note: Platform independent argument prefixes can be used: **'/' or '-'** *
 
@@ -50,7 +50,7 @@ When running with the nologo option, the output should be compatible with Micros
     Signed    : 0
     
 
-Without using the nologo argument:
+## Without using the nologo argument:
 
     mono ./CorFlags.exe CorFlags.exe SudoKnights.exe
     Mono/.NET Framework CorFlags Conversion Tool.  Version  0.9.5643.21314

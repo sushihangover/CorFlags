@@ -60,7 +60,7 @@ namespace CorFlags {
 		protected void Print (Message msg)
 		{
 			StringBuilder txt = new StringBuilder ();
-			txt.AppendFormat ("{0} CF{1:0000}: {2}", msg.MessageType, msg.Code, msg.Text);
+			txt.AppendFormat ("{0} CF{1:000}: {2}", msg.MessageType, msg.Code, msg.Text);
 
 //			if (!msg.IsWarning)
 //				output.WriteLine (FormatText (txt.ToString ()));
@@ -70,7 +70,7 @@ namespace CorFlags {
 		}
 	}
 
-	public class CompilerSettings
+	public class CorFlagsSettings
 	{
 		public bool InfoOnly = true;
 
@@ -95,7 +95,7 @@ namespace CorFlags {
 		readonly List<string> arg_list;
 
 
-		public CompilerSettings ()
+		public CorFlagsSettings ()
 		{
 			source_files = new List<string> ();
 			arg_list = new List<string> ();
@@ -150,11 +150,8 @@ namespace CorFlags {
 
 		public CommandLineParser (TextWriter errorOutput, TextWriter messagesOutput)
 		{
-//			var rp = new StreamReportPrinter (errorOutput);
+			//var rp = new StreamReportPrinter (errorOutput);
 
-//			parser_settings = new CompilerSettings ();
-//			var foo = new Report
-//			var report = new Report (new CompilerContext (parser_settings, rp), rp);
 			this.output = messagesOutput;
 			this.report = new Report (messagesOutput);
 		}
@@ -165,21 +162,20 @@ namespace CorFlags {
 			}
 		}
 
-		public CompilerSettings ParseArguments (string[] args)
+		public CorFlagsSettings ParseArguments (string[] args)
 		{
-			CompilerSettings settings = new CompilerSettings ();
+			var settings = new CorFlagsSettings ();
 			if (!ParseArguments (settings, args))
 				return null;
 
 			return settings;
 		}
 
-		public bool ParseArguments (CompilerSettings settings, string[] args)
+		public bool ParseArguments (CorFlagsSettings settings, string[] args)
 		{
 			if (settings == null)
 				throw new ArgumentNullException ("settings");
 
-			List<string> response_file_list = null;
 			bool parsing_options = true;
 			stop_argument = false;
 			source_file_index = new Dictionary<string, int> ();
@@ -192,16 +188,6 @@ namespace CorFlags {
 				if (arg[0] == '@') {
 					string[] extra_args;
 					string response_file = arg.Substring (1);
-
-					if (response_file_list == null)
-						response_file_list = new List<string> ();
-
-					if (response_file_list.Contains (response_file)) {
-//						report.Error (1515, "Response file `{0}' specified multiple times", response_file);
-						return false;
-					}
-
-					response_file_list.Add (response_file);
 
 					extra_args = LoadArgs (response_file);
 					if (extra_args == null) {
@@ -253,7 +239,6 @@ namespace CorFlags {
 				ProcessSourceFiles (arg, false, settings.SourceFiles);
 			}
 
-//			return report.Errors == 0;
 			return true;
 		}
 
@@ -335,27 +320,13 @@ namespace CorFlags {
 				return;
 			}
 
-//			var unit = new string (fileName, path, sourceFiles.Count + 1);
-//			var unit = new string (fileName);
-//			var unit = new string (fileName);
 			sourceFiles.Add (fileName);
-//			source_file_index.Add (path, unit.Index);
-		}
-
-
-		void Error_RequiresArgument (string option)
-		{
-			report.Error (1001, "Missing argument for `{0}' option", option);
-		}
-
-		void Error_RequiresFileName (string option)
-		{
-			report.Error (1002, "Missing file specification for `{0}' option", option);
 		}
 
 		void Error_WrongOption (string option)
 		{
 			report.Error (1003, "Unrecognized command-line option: `{0}'", option);
+			Environment.Exit ((int)ExitCodes.Error);
 		}
 
 		static string[] LoadArgs (string file)
@@ -407,7 +378,7 @@ namespace CorFlags {
 		//
 		// This parses the -arg and /arg options
 		//
-		ParseResult ParseOption (string option, ref string[] args, CompilerSettings settings)
+		ParseResult ParseOption (string option, ref string[] args, CorFlagsSettings settings)
 		{
 			int idx = option.IndexOf (':');
 			string arg, value;
@@ -455,15 +426,15 @@ namespace CorFlags {
 			case "/32BIT+":
 			case "/32BITREQ+":
 				settings.InfoOnly = false;
-				settings.THIRTYTWO_BITPREFERRED = true;
-				settings.THIRTYTWO_NOT_BITPREFERRED = false;
+				settings.THIRTYTWO_BITREQUIRED = true;
+				settings.THIRTYTWO_NOT_BITREQUIRED = false;
 				return ParseResult.Success;
 
 			case "/32BIT-":
 			case "/32BITREQ-":
 				settings.InfoOnly = false;
-				settings.THIRTYTWO_BITPREFERRED = false;
-				settings.THIRTYTWO_NOT_BITPREFERRED = true;
+				settings.THIRTYTWO_BITREQUIRED = false;
+				settings.THIRTYTWO_NOT_BITREQUIRED = true;
 				return ParseResult.Success;
 
 			case "/32BITPREF":
@@ -473,6 +444,12 @@ namespace CorFlags {
 				settings.THIRTYTWO_NOT_BITPREFERRED = false;
 				return ParseResult.Success;
 			
+			case "/32BITPREF-":
+				settings.InfoOnly = false;
+				settings.THIRTYTWO_BITPREFERRED = false;
+				settings.THIRTYTWO_NOT_BITPREFERRED = true;
+				return ParseResult.Success;
+
 			case "/ILONLY":
 			case "/ILONLY+":
 				settings.InfoOnly = false;
@@ -486,7 +463,7 @@ namespace CorFlags {
 				settings.NOT_ILONLY = true;
 				return ParseResult.Success;
 			
-			case "/REVERTCLSHEADER":
+			case "/REVERTCLRHEADER":
 				settings.InfoOnly = false;
 				settings.RevertCLRHeader = true;
 				settings.UpgradeCLRHeader = false;
@@ -501,15 +478,8 @@ namespace CorFlags {
 
 			case "/debug":
 				if (value.Equals ("+", StringComparison.OrdinalIgnoreCase) || value.Equals ("full", StringComparison.OrdinalIgnoreCase) || value.Equals ("pdbonly", StringComparison.OrdinalIgnoreCase) || idx < 0) {
-//					settings.GenerateDebugInfo = true;
 					return ParseResult.Success;
 				}
-
-//				if (value.Length > 0) {
-//					report.Error (1902, "Invalid debug option `{0}'. Valid options are `full' or `pdbonly'", value);
-//				} else {
-//					Error_RequiresArgument (option);
-//				}
 
 				return ParseResult.Error;
 
@@ -601,21 +571,3 @@ namespace CorFlags {
 		}
 	}
 }
-//
-//Usage: Corflags.exe Assembly [options]
-//
-//If no options are specified, the flags for the given image are displayed.
-//
-//	Options:
-//	/ILONLY+ /ILONLY-       Sets/clears the ILONLY flag
-//	/32BITREQ+ /32BITREQ-   Sets/clears the bits indicating 32-bit x86 only
-//	/32BITPREF+ /32BITPREF- Sets/clears the bits indicating 32-bit preferred
-//	/UpgradeCLRHeader       Upgrade the CLR Header to version 2.5
-//	/RevertCLRHeader        Revert the CLR Header to version 2.0
-//	/Force                  Force an assembly update even if the image is
-//		strong name signed.
-//		WARNING: Updating a strong name signed assembly
-//		will require the assembly to be resigned before
-//		it will execute properly.
-//		/nologo                 Prevents corflags from displaying logo
-

@@ -8,6 +8,13 @@ x86 compiles your assembly to be run by the 32-bit, x86-compatible common langua
 Itanium compiles your assembly to be run by the 64-bit common language runtime on a computer with an Itanium processor.
 
 
+
+//These combine to specify the assembly types. Here is how they would look like for:
+//
+//	anycpu: PE = PE32    and  32BIT = 0
+//		x86:      PE = PE32    and  32BIT = 1
+//		64-bit:  PE = PE32+  and  32BIT = 0
+
 PS> .\CorFlags.exe .\Test\anycpu\Release\DllForTesting.dll
 Microsoft (R) .NET Framework CorFlags Conversion Tool.  Version  4.0.30319.17929
 Copyright (c) Microsoft Corporation.  All rights reserved.

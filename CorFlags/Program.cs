@@ -46,8 +46,6 @@ namespace CorFlags
 		public void AssemblyInfoOutput (CorFlagsInformation info) 
 		{
 			output.WriteLine ("Version   : {0}", info.version);
-			// CLR Header: 2.0 indicates a .Net 1.0 or .Net 1.1 (Everett) image 
-			//		 while 2.5 indicates a .Net 2.0 (Whidbey) image.
 			output.WriteLine ("CLR Header: {0}", (info.clr_header <= TargetRuntime.Net_1_1) ? "2.0" : "2.5");
 			output.WriteLine ("PE        : {0}", info.pe);
 			output.WriteLine ("CorFlags  : 0x{0:X}", info.corflags);
@@ -58,6 +56,47 @@ namespace CorFlags
 			//	anycpu: PE = PE32  and  32BIT = 0
 			//	   x86: PE = PE32  and  32BIT = 1
 			//	64-bit: PE = PE32+ and  32BIT = 0
+		}
+
+		public bool ChangeInfo (ModuleDefinition assembly, CorFlagsSettings args)
+		{
+			var flags = assembly.Attributes;
+			#if DEBUG
+			Console.WriteLine (assembly.Attributes);
+			#endif
+			if (args.ILONLY) 
+				assembly.Attributes |= ModuleAttributes.ILOnly;
+			else if (args.NOT_ILONLY)
+				assembly.Attributes &= ~ModuleAttributes.ILOnly;
+
+			if (args.THIRTYTWO_BITPREFERRED)
+				assembly.Attributes |= ModuleAttributes.Preferred32Bit;
+			else if (args.THIRTYTWO_NOT_BITPREFERRED)
+				assembly.Attributes &= ~ModuleAttributes.Preferred32Bit;
+
+			if (args.THIRTYTWO_BITREQUIRED)
+				assembly.Attributes |= ModuleAttributes.Required32Bit;
+			else if (args.THIRTYTWO_NOT_BITREQUIRED)
+				assembly.Attributes &= ~ModuleAttributes.Required32Bit;
+			// CLR Header: 2.0 indicates a .Net 1.0 or .Net 1.1 (Everett) image 
+			//		 while 2.5 indicates a .Net 2.0 (Whidbey) image.
+			// corflags : error CF014 : It is invalid to revert the CLR header on an image with a version of v4.0.30319
+			bool runtimechanged = false;
+			if (args.UpgradeCLRHeader) {
+				assembly.RuntimeVersion = "4.0";
+				assembly.Runtime = TargetRuntime.Net_4_0;
+				runtimechanged = true;
+			} else if (args.RevertCLRHeader) {
+				assembly.RuntimeVersion = "1.1";
+				assembly.Runtime = TargetRuntime.Net_1_1;
+				runtimechanged = true;
+			}
+
+			#if DEBUG
+			Console.WriteLine (assembly.Attributes);
+			#endif
+
+			return (flags != assembly.Attributes || runtimechanged);
 		}
 
 		public CorFlagsInformation ExtractInfo (ModuleDefinition assembly)
@@ -88,16 +127,16 @@ namespace CorFlags
 			return info;
 		}
 
-		public ModuleDefinition OpenAssembly (CompilerSettings setting,  string aFileName, Report report) {
+		public ModuleDefinition OpenAssembly (CorFlagsSettings setting,  string aFileName, Report report, out string fullAssemblyPath) {
 			var dataPath = Path.GetDirectoryName (GetType ().Assembly.Location);
 
-			var sampleAssemblyPath = Path.Combine (dataPath, aFileName);
+			fullAssemblyPath = Path.Combine (dataPath, aFileName);
 
-			if (!File.Exists (sampleAssemblyPath)) {
+			if (!File.Exists (fullAssemblyPath)) {
 				throw new FileNotFoundException();
 			}
 
-			var targetModule = ModuleDefinition.ReadModule (sampleAssemblyPath);
+			var targetModule = ModuleDefinition.ReadModule (fullAssemblyPath);
 			if (!IsMarked (targetModule)) {
 				// Console.WriteLine("isMarked?");
 			}
@@ -127,7 +166,8 @@ namespace CorFlags
 						cmd.Header ();
 					ModuleDefinition modDef;
 					try {
-						modDef = assemblyInfo.OpenAssembly (cmdArguments, assemblyFileName, report);
+						string fullpathname; 
+						modDef = assemblyInfo.OpenAssembly (cmdArguments, assemblyFileName, report, out fullpathname);
 						if (modDef == null) {
 							report.Error (998, "Unknown error with no exception opening: {0}", assemblyFileName);
 							Environment.Exit ((int)ExitCodes.Error);
@@ -136,10 +176,27 @@ namespace CorFlags
 							if (cmdArguments.InfoOnly) {
 								assemblyInfo.AssemblyInfoOutput (corFlags);
 							} else {
-								//TODO: Changing flags and saving assembly not implemented yet
-								throw new NotImplementedException ();
+								var changed = assemblyInfo.ChangeInfo (modDef, cmdArguments);
+								if (changed && ((corFlags.signed && cmdArguments.Force) || !corFlags.signed)) {
+									// Make a backup
+									File.Copy(fullpathname, Path.Combine (Path.GetTempPath(), assemblyFileName), true);
+									// Console.WriteLine (Path.Combine (Path.GetTempPath(), assemblyFileName));
+									try {
+										// corflags : warning CF011 : The specified file is strong name signed.  Using /Force will invalidate the signature of this
+										// image and will require the assembly to be resigned.
+										modDef.Write (fullpathname);
+									} catch (Exception e) {
+										// If exception on Cecil writing, 'restore' backup
+										File.Copy(Path.Combine (Path.GetTempPath(), assemblyFileName), fullpathname, true);
+										throw e;
+									}
+								} else if (changed && corFlags.signed && !cmdArguments.Force) {
+									// Strong name signed, but no Force argument passed
+									// corflags : error CF012 : The specified file is strong name signed.  Use /Force to force the update.
+									throw new Exception ("The specified file is strong name signed.  Use /Force to force the update.");
+								}
 							}
-							Console.WriteLine ();
+							output.WriteLine();
 						}
 					} catch (FileNotFoundException) {
 						// corflags : error CF002 : Could not open file for reading
@@ -147,12 +204,20 @@ namespace CorFlags
 						Environment.Exit ((int)ExitCodes.Error);
 					} catch (BadImageFormatException) {
 						// System.BadImageFormatException: Format of the executable (.exe) or library (.dll) is invalid.
-						// corflags : error CF008 : The specified file does not have a valid managed header
+						// The specified file does not have a valid managed header
 						report.Error (8, "{0}", "The specified file does not have a valid managed header");
 						Environment.Exit ((int)ExitCodes.Error);
 					} catch (Exception e) {
+						// i.e. /ILONLY- Cecil; Writing mixed-mode assemblies is not supported
 						report.Error (999, "Unknown exception: {0}", e.Message);
+						#if DEBUG
+						output.WriteLine (e);
+						#endif 
 						Environment.Exit ((int)ExitCodes.Error);
+					} finally {
+						// Delete backup
+						if (File.Exists (Path.Combine (Path.GetTempPath(), assemblyFileName)))
+							File.Delete (Path.Combine (Path.GetTempPath(), assemblyFileName));
 					}
 				}
 				Environment.Exit ((int)ExitCodes.Success);
@@ -161,35 +226,3 @@ namespace CorFlags
 		}
 	}
 }
-
-//.\CorFlags.exe .\perftest-32-release.exe
-//Microsoft (R) .NET Framework CorFlags Conversion Tool.  Version  4.0.30319.17929
-//Copyright (c) Microsoft Corporation.  All rights reserved.
-//
-//Version   : v4.0.30319
-//CLR Header: 2.5
-//PE        : PE32
-//CorFlags  : 0x3
-//ILONLY    : 1
-//32BITREQ  : 1
-//32BITPREF : 0
-//Signed    : 0
-//
-//.\CorFlags.exe .\perftest-64-release.exe
-//Microsoft (R) .NET Framework CorFlags Conversion Tool.  Version  4.0.30319.17929
-//Copyright (c) Microsoft Corporation.  All rights reserved.
-//
-//Version   : v4.0.30319
-//CLR Header: 2.5
-//PE        : PE32+
-//CorFlags  : 0x1
-//ILONLY    : 1
-//32BITREQ  : 0
-//32BITPREF : 0
-//Signed    : 0
-//
-//These combine to specify the assembly types. Here is how they would look like for:
-//
-//	anycpu: PE = PE32    and  32BIT = 0
-//		x86:      PE = PE32    and  32BIT = 1
-//		64-bit:  PE = PE32+  and  32BIT = 0
