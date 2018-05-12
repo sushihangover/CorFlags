@@ -172,7 +172,7 @@ namespace CorFlags
 					    }
 
                         File.Copy(assemblyFile, backupFile, true);
-					    using (var modDef = assemblyInfo.OpenAssembly(cmdArguments, assemblyFile, report)) {
+					    using (var modDef = assemblyInfo.OpenAssembly(cmdArguments, backupFile, report)) {
 
                             if (modDef == null) {
                                 report.Error(998, "Unknown error with no exception opening: {0}", assemblyFileName);
