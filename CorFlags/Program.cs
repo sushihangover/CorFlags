@@ -127,7 +127,7 @@ namespace CorFlags
 		}
 
 		public ModuleDefinition OpenAssembly (CorFlagsSettings setting,  string aFileName, Report report, out string fullAssemblyPath) {
-			var dataPath = Path.GetDirectoryName (Environment.GetEnvironmentVariable ("PWD"));
+			var dataPath = Path.GetDirectoryName (Environment.GetEnvironmentVariable ("PWD")) ?? Directory.GetCurrentDirectory();
 
 			fullAssemblyPath = Path.Combine (dataPath, aFileName);
 			var fullPath = Path.GetFullPath(aFileName);
@@ -166,6 +166,7 @@ namespace CorFlags
 				foreach (var assemblyFileName in cmdArguments.SourceFiles) {
 					if (!cmdArguments.NoLogo)
 						cmd.Header ();
+				    var backupFile = Path.Combine(Path.GetTempPath(), Path.GetFileName(assemblyFileName));
 					ModuleDefinition modDef;
 					try {
 						string fullpathname; 
@@ -181,16 +182,16 @@ namespace CorFlags
 								var changed = assemblyInfo.ChangeInfo (modDef, cmdArguments);
 								if (changed && ((corFlags.signed && cmdArguments.Force) || !corFlags.signed)) {
 									// Make a backup
-									File.Copy(fullpathname, Path.Combine (Path.GetTempPath(), assemblyFileName), true);
+									File.Copy(fullpathname, backupFile, true);
 									// Console.WriteLine (Path.Combine (Path.GetTempPath(), assemblyFileName));
 									try {
 										// corflags : warning CF011 : The specified file is strong name signed.  Using /Force will invalidate the signature of this
 										// image and will require the assembly to be resigned.
 										modDef.Write (fullpathname);
-									} catch (Exception e) {
+									} catch (Exception) {
 										// If exception on Cecil writing, 'restore' backup
-										File.Copy(Path.Combine (Path.GetTempPath(), assemblyFileName), fullpathname, true);
-										throw e;
+										File.Copy(backupFile, fullpathname, true);
+										throw;
 									}
 								} else if (changed && corFlags.signed && !cmdArguments.Force) {
 									// Strong name signed, but no Force argument passed
@@ -218,8 +219,8 @@ namespace CorFlags
 						Environment.Exit ((int)ExitCodes.Error);
 					} finally {
 						// Delete backup
-						if (File.Exists (Path.Combine (Path.GetTempPath(), assemblyFileName)))
-							File.Delete (Path.Combine (Path.GetTempPath(), assemblyFileName));
+						if (File.Exists (backupFile))
+							File.Delete (backupFile);
 					}
 				}
 				Environment.Exit ((int)ExitCodes.Success);
