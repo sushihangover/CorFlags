@@ -126,11 +126,7 @@ namespace CorFlags
 			return info;
 		}
 
-		public ModuleDefinition OpenAssembly (CorFlagsSettings setting,  string aFileName, Report report, out string fullAssemblyPath) {
-			var dataPath = Path.GetDirectoryName (Environment.GetEnvironmentVariable ("PWD"));
-
-			fullAssemblyPath = Path.Combine (dataPath, aFileName);
-			var fullPath = Path.GetFullPath(aFileName);
+		public ModuleDefinition OpenAssembly (CorFlagsSettings setting,  string fullPath, Report report) {
 			if (!File.Exists (fullPath)) {
 				#if DEBUG
 				output.WriteLine (fullPath);
@@ -166,41 +162,47 @@ namespace CorFlags
 				foreach (var assemblyFileName in cmdArguments.SourceFiles) {
 					if (!cmdArguments.NoLogo)
 						cmd.Header ();
-					ModuleDefinition modDef;
-					try {
-						string fullpathname; 
-						modDef = assemblyInfo.OpenAssembly (cmdArguments, assemblyFileName, report, out fullpathname);
-						if (modDef == null) {
-							report.Error (998, "Unknown error with no exception opening: {0}", assemblyFileName);
-							Environment.Exit ((int)ExitCodes.Error);
-						} else {
-							var corFlags = assemblyInfo.ExtractInfo (modDef);
-							if (cmdArguments.InfoOnly) {
-								assemblyInfo.AssemblyInfoOutput (corFlags);
-							} else {
-								var changed = assemblyInfo.ChangeInfo (modDef, cmdArguments);
-								if (changed && ((corFlags.signed && cmdArguments.Force) || !corFlags.signed)) {
-									// Make a backup
-									File.Copy(fullpathname, Path.Combine (Path.GetTempPath(), assemblyFileName), true);
-									// Console.WriteLine (Path.Combine (Path.GetTempPath(), assemblyFileName));
-									try {
-										// corflags : warning CF011 : The specified file is strong name signed.  Using /Force will invalidate the signature of this
-										// image and will require the assembly to be resigned.
-										modDef.Write (fullpathname);
-									} catch (Exception e) {
-										// If exception on Cecil writing, 'restore' backup
-										File.Copy(Path.Combine (Path.GetTempPath(), assemblyFileName), fullpathname, true);
-										throw e;
-									}
-								} else if (changed && corFlags.signed && !cmdArguments.Force) {
-									// Strong name signed, but no Force argument passed
-									// corflags : error CF012 : The specified file is strong name signed.  Use /Force to force the update.
-									throw new Exception ("The specified file is strong name signed.  Use /Force to force the update.");
-								}
-							}
-							output.WriteLine();
-						}
-					} catch (FileNotFoundException) {
+				    var backupFile = Path.Combine(Path.GetTempPath(), Path.GetFileName(assemblyFileName));
+				    try {
+					    //var dataPath = Path.GetDirectoryName(Environment.GetEnvironmentVariable("PWD")) ?? Directory.GetCurrentDirectory();
+					    var assemblyFile = Path.GetFullPath(assemblyFileName);
+					    var pwd = Environment.GetEnvironmentVariable("PWD");
+                        if (!File.Exists(assemblyFile) && null != pwd) {
+					        assemblyFile = Path.Combine(pwd, assemblyFileName);
+					    }
+
+                        File.Copy(assemblyFile, backupFile, true);
+					    using (var modDef = assemblyInfo.OpenAssembly(cmdArguments, backupFile, report)) {
+
+                            if (modDef == null) {
+                                report.Error(998, "Unknown error with no exception opening: {0}", assemblyFileName);
+                                Environment.Exit((int)ExitCodes.Error);
+                            } else {
+                                var corFlags = assemblyInfo.ExtractInfo(modDef);
+                                if (cmdArguments.InfoOnly) {
+                                    assemblyInfo.AssemblyInfoOutput(corFlags);
+                                } else {
+                                    var changed = assemblyInfo.ChangeInfo(modDef, cmdArguments);
+                                    if (changed && ((corFlags.signed && cmdArguments.Force) || !corFlags.signed)) {
+                                        try {
+                                            // corflags : warning CF011 : The specified file is strong name signed.  Using /Force will invalidate the signature of this
+                                            // image and will require the assembly to be resigned.
+                                            modDef.Write(assemblyFile);
+                                        } catch (Exception) {
+                                            // If exception on Cecil writing, 'restore' backup
+                                            File.Copy(backupFile, assemblyFile, true);
+                                            throw;
+                                        }
+                                    } else if (changed && corFlags.signed && !cmdArguments.Force) {
+                                        // Strong name signed, but no Force argument passed
+                                        // corflags : error CF012 : The specified file is strong name signed.  Use /Force to force the update.
+                                        throw new Exception("The specified file is strong name signed.  Use /Force to force the update.");
+                                    }
+                                }
+                                output.WriteLine();
+                            }
+					    }
+                    } catch (FileNotFoundException) {
 						// corflags : error CF002 : Could not open file for reading
 						report.Error (2, "{0}", "Could not open file for reading");
 						Environment.Exit ((int)ExitCodes.Error);
@@ -218,8 +220,8 @@ namespace CorFlags
 						Environment.Exit ((int)ExitCodes.Error);
 					} finally {
 						// Delete backup
-						if (File.Exists (Path.Combine (Path.GetTempPath(), assemblyFileName)))
-							File.Delete (Path.Combine (Path.GetTempPath(), assemblyFileName));
+						if (File.Exists (backupFile))
+							File.Delete (backupFile);
 					}
 				}
 				Environment.Exit ((int)ExitCodes.Success);
